@@ -1101,7 +1101,8 @@ function emptyTradeForm(dateKeyStr, portfolio) {
     strategy: "",
     timeframe: "",
     notes: "",
-    screenshot: null,
+    screenshot_before: null,
+    screenshot_after: null,
   };
 }
 
@@ -1109,7 +1110,9 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
   const [form, setForm] = useState(() => emptyTradeForm(dk, portfolio));
   const [editingId, setEditingId] = useState(null);
   const [showMore, setShowMore] = useState(false);
-  const fileRef = useRef(null);
+  const [lightbox, setLightbox] = useState(null);
+  const fileRefBefore = useRef(null);
+  const fileRefAfter = useRef(null);
 
   function startEdit(t) {
     setEditingId(t.trade_id);
@@ -1129,7 +1132,8 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
       strategy: t.strategy || "",
       timeframe: t.timeframe || "",
       notes: t.notes || "",
-      screenshot: t.screenshot || null,
+      screenshot_before: t.screenshot_before || null,
+      screenshot_after: t.screenshot_after || null,
     });
     setShowMore(true);
   }
@@ -1155,18 +1159,20 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
       strategy: form.strategy,
       timeframe: form.timeframe,
       notes: form.notes,
-      screenshot: form.screenshot,
+      screenshot_before: form.screenshot_before,
+      screenshot_after: form.screenshot_after,
     };
     if (editingId) onEdit(editingId, payload);
     else onAdd(payload);
     resetForm();
   }
 
-  function handleFile(e) {
+  function handleFile(e, field) {
     const file = e.target.files && e.target.files[0];
+    e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setForm((f) => ({ ...f, screenshot: reader.result }));
+    reader.onload = () => setForm((f) => ({ ...f, [field]: reader.result }));
     reader.readAsDataURL(file);
   }
 
@@ -1199,23 +1205,57 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                 {trades.map((t) => {
                   const meta = RESULT_META[t.result];
                   return (
-                    <div key={t.trade_id} className="flex items-center justify-between px-3 py-2" style={{ background: COLORS.panel2, borderRadius: 8, border: `1px solid ${COLORS.borderSoft}` }}>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5" style={{ fontSize: 11, borderRadius: 999, background: meta.dim, color: meta.color }}>{meta.short}</span>
-                        <span style={{ fontSize: 12.5 }}>{t.instrument || "Untitled"}</span>
-                        <span style={{ fontFamily: F.mono, fontSize: 12, color: COLORS.textDim }}>{t.risk_percentage}% risk</span>
-                        {t.result === "TP" && <span style={{ fontFamily: F.mono, fontSize: 12, color: COLORS.textDim }}>1:{t.tp_rr}</span>}
+                    <div key={t.trade_id} className="px-3 py-2" style={{ background: COLORS.panel2, borderRadius: 8, border: `1px solid ${COLORS.borderSoft}` }}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2 py-0.5" style={{ fontSize: 11, borderRadius: 999, background: meta.dim, color: meta.color }}>{meta.short}</span>
+                          <span style={{ fontSize: 12.5 }}>{t.instrument || "Untitled"}</span>
+                          <span style={{ fontFamily: F.mono, fontSize: 12, color: COLORS.textDim }}>{t.risk_percentage}% risk</span>
+                          {t.result === "TP" && <span style={{ fontFamily: F.mono, fontSize: 12, color: COLORS.textDim }}>1:{t.tp_rr}</span>}
+                        </div>
+                        {!isReadOnly && (
+                          <div className="flex items-center gap-1">
+                            <button className="rrj-btn p-1.5" onClick={() => startEdit(t)}><Pencil size={12} /></button>
+                            <button className="rrj-btn p-1.5" onClick={() => onDuplicate(t)}><Copy size={12} /></button>
+                            <button className="rrj-btn p-1.5" onClick={() => onDelete(t.trade_id)}><Trash2 size={12} color={COLORS.red} /></button>
+                          </div>
+                        )}
                       </div>
-                      {!isReadOnly && (
-                        <div className="flex items-center gap-1">
-                          <button className="rrj-btn p-1.5" onClick={() => startEdit(t)}><Pencil size={12} /></button>
-                          <button className="rrj-btn p-1.5" onClick={() => onDuplicate(t)}><Copy size={12} /></button>
-                          <button className="rrj-btn p-1.5" onClick={() => onDelete(t.trade_id)}><Trash2 size={12} color={COLORS.red} /></button>
+                      {(t.screenshot_before || t.screenshot_after) && (
+                        <div className="flex items-center gap-2 mt-2">
+                          {t.screenshot_before && (
+                            <button onClick={() => setLightbox({ src: t.screenshot_before, label: "Before" })} className="flex flex-col items-start gap-1">
+                              <img src={t.screenshot_before} alt="before" style={{ height: 52, borderRadius: 6, border: `1px solid ${COLORS.border}`, objectFit: "cover" }} />
+                              <span style={{ fontSize: 9.5, color: COLORS.textFaint }}>Before</span>
+                            </button>
+                          )}
+                          {t.screenshot_after && (
+                            <button onClick={() => setLightbox({ src: t.screenshot_after, label: "After" })} className="flex flex-col items-start gap-1">
+                              <img src={t.screenshot_after} alt="after" style={{ height: 52, borderRadius: 6, border: `1px solid ${COLORS.border}`, objectFit: "cover" }} />
+                              <span style={{ fontSize: 9.5, color: COLORS.textFaint }}>After</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {lightbox && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-6"
+              style={{ background: "rgba(4,6,10,0.9)" }}
+              onClick={() => setLightbox(null)}
+            >
+              <div className="flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between w-full">
+                  <span style={{ fontSize: 13, color: COLORS.textDim }}>{lightbox.label}</span>
+                  <button className="rrj-btn p-1.5" onClick={() => setLightbox(null)}><X size={16} /></button>
+                </div>
+                <img src={lightbox.src} alt={lightbox.label} style={{ maxHeight: "80vh", maxWidth: "100%", borderRadius: 10, border: `1px solid ${COLORS.border}` }} />
               </div>
             </div>
           )}
@@ -1366,19 +1406,35 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                   value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </div>
-              <div className="col-span-2">
-                <FieldLabel>Screenshot</FieldLabel>
-                <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
-                {form.screenshot ? (
-                  <div className="relative inline-block">
-                    <img src={form.screenshot} alt="screenshot" style={{ maxHeight: 120, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
-                    <button className="rrj-btn p-1 absolute top-1 right-1" onClick={() => setForm((f) => ({ ...f, screenshot: null }))}><X size={12} /></button>
-                  </div>
-                ) : (
-                  <button className="rrj-btn px-3 py-2 flex items-center gap-2" style={{ fontSize: 12.5 }} onClick={() => fileRef.current && fileRef.current.click()}>
-                    <ImageIcon size={14} /> Upload screenshot
-                  </button>
-                )}
+              <div className="col-span-2 grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel>Screenshot — Before</FieldLabel>
+                  <input ref={fileRefBefore} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_before")} className="hidden" />
+                  {form.screenshot_before ? (
+                    <div className="relative inline-block">
+                      <img src={form.screenshot_before} alt="before" style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
+                      <button className="rrj-btn p-1 absolute top-1 right-1" onClick={() => setForm((f) => ({ ...f, screenshot_before: null }))}><X size={12} /></button>
+                    </div>
+                  ) : (
+                    <button className="rrj-btn px-3 py-2 flex items-center gap-2 w-full justify-center" style={{ fontSize: 12.5 }} onClick={() => fileRefBefore.current && fileRefBefore.current.click()}>
+                      <ImageIcon size={14} /> Upload
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <FieldLabel>Screenshot — After</FieldLabel>
+                  <input ref={fileRefAfter} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_after")} className="hidden" />
+                  {form.screenshot_after ? (
+                    <div className="relative inline-block">
+                      <img src={form.screenshot_after} alt="after" style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
+                      <button className="rrj-btn p-1 absolute top-1 right-1" onClick={() => setForm((f) => ({ ...f, screenshot_after: null }))}><X size={12} /></button>
+                    </div>
+                  ) : (
+                    <button className="rrj-btn px-3 py-2 flex items-center gap-2 w-full justify-center" style={{ fontSize: 12.5 }} onClick={() => fileRefAfter.current && fileRefAfter.current.click()}>
+                      <ImageIcon size={14} /> Upload
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
