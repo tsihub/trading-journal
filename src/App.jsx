@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { SYNC_CODE, IS_READ_ONLY } from "./storage-shim.js";
+import { SYNC_CODE, IS_READ_ONLY, uploadScreenshot } from "./storage-shim.js";
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell
@@ -221,7 +221,12 @@ export default function TradingJournalApp() {
     saveTimer.current = setTimeout(async () => {
       try {
         await window.storage.set(STORAGE_KEY, JSON.stringify({ portfolios, activeId }), false);
-      } catch (e) { /* best effort */ }
+      } catch (e) {
+        setToast({
+          type: "err",
+          text: "Couldn't save to the cloud (data may be too large — try smaller screenshots). Your latest changes are NOT saved yet — please export a backup now.",
+        });
+      }
     }, 350);
     return () => clearTimeout(saveTimer.current);
   }, [portfolios, activeId, loaded]);
@@ -552,6 +557,34 @@ function groupBy(arr, fn) {
     (out[k] = out[k] || []).push(item);
   }
   return out;
+}
+
+// Shrinks an uploaded screenshot before it's stored, so a handful of trade
+// photos don't blow past the cloud database's per-record size limit.
+function compressImage(file, maxDim = 1000, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+          else { width = Math.round((width * maxDim) / height); height = maxDim; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /* -------------------------------- header -------------------------------- */
@@ -1111,6 +1144,8 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
   const [editingId, setEditingId] = useState(null);
   const [showMore, setShowMore] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  const [uploading, setUploading] = useState({ screenshot_before: false, screenshot_after: false });
+  const [uploadError, setUploadError] = useState("");
   const fileRefBefore = useRef(null);
   const fileRefAfter = useRef(null);
 
@@ -1171,9 +1206,14 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setForm((f) => ({ ...f, [field]: reader.result }));
-    reader.readAsDataURL(file);
+    compressImage(file, 1000, 0.7)
+      .then((dataUrl) => setForm((f) => ({ ...f, [field]: dataUrl })))
+      .catch(() => {
+        // fallback: use original file if compression fails for any reason
+        const reader = new FileReader();
+        reader.onload = () => setForm((f) => ({ ...f, [field]: reader.result }));
+        reader.readAsDataURL(file);
+      });
   }
 
   const dayMetrics = computeMetrics(enrichTrades(trades, portfolio.starting_capital, false), portfolio.starting_capital);
