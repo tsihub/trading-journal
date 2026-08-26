@@ -1402,10 +1402,10 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                               className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
                               style={{ fontSize: 12 }}
                             >
-                              {isDataImage(t.screenshot_before) ? (
+                              {!isReadOnly && isDataImage(t.screenshot_before) ? (
                                 <img src={t.screenshot_before} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
                               ) : (
-                                <ExternalLink size={12} />
+                                <ImageIcon size={12} />
                               )}
                               Before
                             </button>
@@ -1416,10 +1416,10 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                               className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
                               style={{ fontSize: 12 }}
                             >
-                              {isDataImage(t.screenshot_after) ? (
+                              {!isReadOnly && isDataImage(t.screenshot_after) ? (
                                 <img src={t.screenshot_after} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
                               ) : (
-                                <ExternalLink size={12} />
+                                <ImageIcon size={12} />
                               )}
                               After
                             </button>
