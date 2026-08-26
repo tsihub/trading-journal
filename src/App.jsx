@@ -8,7 +8,7 @@ import {
   Plus, X, Settings, ChevronLeft, ChevronRight, Trash2, Copy, Pencil,
   Wallet, Target, Flame, Snowflake, TrendingUp, TrendingDown, Image as ImageIcon,
   Check, ChevronDown, Filter, Layers, ArrowUpRight, ArrowDownRight, Download, Upload,
-  Eye, Lock
+  Eye, Lock, ExternalLink
 } from "lucide-react";
 
 /* ----------------------------- constants ----------------------------- */
@@ -241,6 +241,19 @@ export default function TradingJournalApp() {
     setPortfolios((prev) => prev.map((p) => (p.portfolio_id === id ? updater(p) : p)));
   }, []);
 
+  // Uploaded photos (data: URLs) open in the built-in viewer.
+  // Pasted links (e.g. Google Photos) open directly in a new tab — we can't
+  // embed those, and this keeps full original quality.
+  function openScreenshot(trade, view) {
+    const src = view === "before" ? trade.screenshot_before : trade.screenshot_after;
+    if (!src) return;
+    if (isDataImage(src)) {
+      setLightbox({ trade, view });
+    } else {
+      window.open(src, "_blank", "noopener,noreferrer");
+    }
+  }
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3200);
@@ -418,7 +431,7 @@ export default function TradingJournalApp() {
           onDelete={deleteTrade}
           onDuplicate={duplicateTrade}
           isReadOnly={IS_READ_ONLY}
-          onOpenImage={(trade, view) => setLightbox({ trade, view })}
+          onOpenImage={openScreenshot}
         />
 
         <MonthlyAnalyticsSection viewDate={viewDate} metrics={monthMetrics} currency={portfolio.currency} />
@@ -439,7 +452,7 @@ export default function TradingJournalApp() {
           onDelete={deleteTrade}
           onDuplicate={duplicateTrade}
           isReadOnly={IS_READ_ONLY}
-          onOpenImage={(trade, view) => setLightbox({ trade, view })}
+          onOpenImage={openScreenshot}
         />
       )}
 
@@ -1389,7 +1402,11 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                               className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
                               style={{ fontSize: 12 }}
                             >
-                              <img src={t.screenshot_before} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              {isDataImage(t.screenshot_before) ? (
+                                <img src={t.screenshot_before} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              ) : (
+                                <ExternalLink size={12} />
+                              )}
                               Before
                             </button>
                           )}
@@ -1399,7 +1416,11 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                               className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
                               style={{ fontSize: 12 }}
                             >
-                              <img src={t.screenshot_after} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              {isDataImage(t.screenshot_after) ? (
+                                <img src={t.screenshot_after} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              ) : (
+                                <ExternalLink size={12} />
+                              )}
                               After
                             </button>
                           )}
@@ -1559,34 +1580,22 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                 />
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-3">
-                <div>
-                  <FieldLabel>Screenshot — Before</FieldLabel>
-                  <input ref={fileRefBefore} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_before")} className="hidden" />
-                  {form.screenshot_before ? (
-                    <div className="relative inline-block">
-                      <img src={form.screenshot_before} alt="before" style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
-                      <button className="rrj-btn p-1 absolute top-1 right-1" onClick={() => setForm((f) => ({ ...f, screenshot_before: null }))}><X size={12} /></button>
-                    </div>
-                  ) : (
-                    <button className="rrj-btn px-3 py-2 flex items-center gap-2 w-full justify-center" style={{ fontSize: 12.5 }} onClick={() => fileRefBefore.current && fileRefBefore.current.click()}>
-                      <ImageIcon size={14} /> Upload
-                    </button>
-                  )}
-                </div>
-                <div>
-                  <FieldLabel>Screenshot — After</FieldLabel>
-                  <input ref={fileRefAfter} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_after")} className="hidden" />
-                  {form.screenshot_after ? (
-                    <div className="relative inline-block">
-                      <img src={form.screenshot_after} alt="after" style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
-                      <button className="rrj-btn p-1 absolute top-1 right-1" onClick={() => setForm((f) => ({ ...f, screenshot_after: null }))}><X size={12} /></button>
-                    </div>
-                  ) : (
-                    <button className="rrj-btn px-3 py-2 flex items-center gap-2 w-full justify-center" style={{ fontSize: 12.5 }} onClick={() => fileRefAfter.current && fileRefAfter.current.click()}>
-                      <ImageIcon size={14} /> Upload
-                    </button>
-                  )}
-                </div>
+                <ScreenshotField
+                  label="Screenshot — Before"
+                  value={form.screenshot_before}
+                  onUploadClick={() => fileRefBefore.current && fileRefBefore.current.click()}
+                  onLinkChange={(v) => setForm((f) => ({ ...f, screenshot_before: v }))}
+                  onClear={() => setForm((f) => ({ ...f, screenshot_before: null }))}
+                />
+                <input ref={fileRefBefore} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_before")} className="hidden" />
+                <ScreenshotField
+                  label="Screenshot — After"
+                  value={form.screenshot_after}
+                  onUploadClick={() => fileRefAfter.current && fileRefAfter.current.click()}
+                  onLinkChange={(v) => setForm((f) => ({ ...f, screenshot_after: v }))}
+                  onClear={() => setForm((f) => ({ ...f, screenshot_after: null }))}
+                />
+                <input ref={fileRefAfter} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_after")} className="hidden" />
               </div>
             </div>
           )}
@@ -1631,6 +1640,52 @@ function TextField({ label, value, onChange, placeholder }) {
     <div>
       <FieldLabel>{label}</FieldLabel>
       <input className="rrj-input px-3 py-2 w-full" style={{ fontSize: 13 }} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// A data: URL means an uploaded (compressed) image is stored directly.
+// Anything else is treated as an external link (e.g. a Google Photos share link).
+function isDataImage(v) {
+  return typeof v === "string" && v.startsWith("data:image");
+}
+
+function ScreenshotField({ label, value, onUploadClick, onLinkChange, onClear }) {
+  const isUploaded = isDataImage(value);
+  const isLink = value && !isUploaded;
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      {isUploaded ? (
+        <div className="relative inline-block mb-2">
+          <img src={value} alt={label} style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
+          <button className="rrj-btn p-1 absolute top-1 right-1" onClick={onClear}><X size={12} /></button>
+        </div>
+      ) : (
+        <button className="rrj-btn px-3 py-2 flex items-center gap-2 w-full justify-center mb-2" style={{ fontSize: 12.5 }} onClick={onUploadClick}>
+          <ImageIcon size={14} /> Upload photo
+        </button>
+      )}
+      <div className="flex items-center gap-1.5">
+        <div style={{ flex: 1, height: 1, background: COLORS.borderSoft }} />
+        <span style={{ fontSize: 10, color: COLORS.textFaint }}>OR</span>
+        <div style={{ flex: 1, height: 1, background: COLORS.borderSoft }} />
+      </div>
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          className="rrj-input px-2.5 py-1.5 flex-1"
+          style={{ fontSize: 12 }}
+          placeholder="Paste Google Photos link"
+          value={isLink ? value : ""}
+          onChange={(e) => onLinkChange(e.target.value)}
+        />
+        {isLink && (
+          <button className="rrj-btn p-1.5" onClick={onClear}><X size={12} /></button>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: COLORS.textFaint, marginTop: 4 }}>
+        Full quality, no size limit — best for clarity.
+      </div>
     </div>
   );
 }
