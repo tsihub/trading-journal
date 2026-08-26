@@ -578,6 +578,8 @@ function compressImage(file, maxDim = 1000, quality = 0.7) {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL("image/jpeg", quality));
       };
@@ -1206,7 +1208,7 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    compressImage(file, 1000, 0.7)
+    compressImage(file, 1600, 0.88)
       .then((dataUrl) => setForm((f) => ({ ...f, [field]: dataUrl })))
       .catch(() => {
         // fallback: use original file if compression fails for any reason
