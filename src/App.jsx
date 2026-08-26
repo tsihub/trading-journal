@@ -177,6 +177,7 @@ export default function TradingJournalApp() {
   const [portfolioMenuOpen, setPortfolioMenuOpen] = useState(false);
   const [historyFilters, setHistoryFilters] = useState({ result: "ALL", search: "" });
   const [toast, setToast] = useState(null);
+  const [lightbox, setLightbox] = useState(null); // { trade, view: 'before' | 'after' }
   const saveTimer = useRef(null);
   const importInputRef = useRef(null);
 
@@ -417,6 +418,7 @@ export default function TradingJournalApp() {
           onDelete={deleteTrade}
           onDuplicate={duplicateTrade}
           isReadOnly={IS_READ_ONLY}
+          onOpenImage={(trade, view) => setLightbox({ trade, view })}
         />
 
         <MonthlyAnalyticsSection viewDate={viewDate} metrics={monthMetrics} currency={portfolio.currency} />
@@ -437,7 +439,12 @@ export default function TradingJournalApp() {
           onDelete={deleteTrade}
           onDuplicate={duplicateTrade}
           isReadOnly={IS_READ_ONLY}
+          onOpenImage={(trade, view) => setLightbox({ trade, view })}
         />
+      )}
+
+      {lightbox && (
+        <ImageLightbox lightbox={lightbox} setLightbox={setLightbox} />
       )}
 
       {showSettings && !IS_READ_ONLY && (
@@ -561,7 +568,18 @@ function groupBy(arr, fn) {
 
 // Shrinks an uploaded screenshot before it's stored, so a handful of trade
 // photos don't blow past the cloud database's per-record size limit.
-function compressImage(file, maxDim = 1000, quality = 0.7) {
+// Tries a decent size/quality first, then automatically steps down
+// (smaller dimensions, lower quality) until the result is small enough —
+// so it stays as clear as possible while still fitting safely.
+function compressImage(file, targetBytes = 220 * 1024) {
+  const steps = [
+    { maxDim: 1400, quality: 0.8 },
+    { maxDim: 1100, quality: 0.7 },
+    { maxDim: 900, quality: 0.6 },
+    { maxDim: 700, quality: 0.5 },
+    { maxDim: 550, quality: 0.4 },
+    { maxDim: 420, quality: 0.35 },
+  ];
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error);
@@ -569,24 +587,111 @@ function compressImage(file, maxDim = 1000, quality = 0.7) {
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
-          else { width = Math.round((width * maxDim) / height); height = maxDim; }
+        let result = null;
+        for (const { maxDim, quality } of steps) {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+            else { width = Math.round((width * maxDim) / height); height = maxDim; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", quality);
+          result = dataUrl; // always keep the latest (smallest so far) as a fallback
+          if (dataUrl.length <= targetBytes * 1.37) break; // base64 is ~37% bigger than raw bytes
         }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        resolve(result);
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
+}
+
+/* -------------------------------- image lightbox -------------------------------- */
+
+function ImageLightbox({ lightbox, setLightbox }) {
+  const { trade, view } = lightbox;
+  const src = view === "before" ? trade.screenshot_before : trade.screenshot_after;
+  const hasBoth = trade.screenshot_before && trade.screenshot_after;
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") setLightbox(null);
+      if (e.key === "ArrowLeft" && hasBoth) setLightbox({ trade, view: "before" });
+      if (e.key === "ArrowRight" && hasBoth) setLightbox({ trade, view: "after" });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [trade, hasBoth, setLightbox]);
+
+  return (
+    <div
+      className="rrj-fade-in fixed inset-0 z-50 flex flex-col"
+      style={{ background: "rgba(4,6,10,0.95)" }}
+      onClick={() => setLightbox(null)}
+    >
+      <div className="flex items-center justify-between px-4 md:px-6 py-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          {hasBoth ? (
+            ["before", "after"].map((v) => (
+              <button
+                key={v}
+                onClick={() => setLightbox({ trade, view: v })}
+                className="rrj-pill px-3 py-1.5 capitalize"
+                style={{
+                  fontSize: 12.5,
+                  background: view === v ? COLORS.accent : undefined,
+                  color: view === v ? "#06121F" : undefined,
+                  borderColor: view === v ? "transparent" : undefined,
+                  fontWeight: view === v ? 600 : 400,
+                }}
+              >
+                {v}
+              </button>
+            ))
+          ) : (
+            <span className="px-3 py-1.5 capitalize" style={{ fontSize: 12.5, color: COLORS.textDim }}>{view}</span>
+          )}
+          <span style={{ fontSize: 12, color: COLORS.textFaint }}>· {trade.date}{trade.instrument ? ` · ${trade.instrument}` : ""}</span>
+        </div>
+        <button className="rrj-btn p-2" onClick={() => setLightbox(null)} aria-label="Close">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center px-4 pb-6 relative" onClick={(e) => e.stopPropagation()}>
+        {hasBoth && (
+          <button
+            className="rrj-btn p-2 absolute left-3 md:left-6 top-1/2 -translate-y-1/2"
+            onClick={() => setLightbox({ trade, view: view === "before" ? "after" : "before" })}
+            aria-label="Switch image"
+          >
+            <ChevronLeft size={20} />
+          </button>
+        )}
+        {src ? (
+          <img src={src} alt={view} style={{ maxHeight: "80vh", maxWidth: "92vw", borderRadius: 10, border: `1px solid ${COLORS.border}`, objectFit: "contain" }} />
+        ) : (
+          <div style={{ color: COLORS.textFaint, fontSize: 13 }}>No {view} screenshot for this trade.</div>
+        )}
+        {hasBoth && (
+          <button
+            className="rrj-btn p-2 absolute right-3 md:right-6 top-1/2 -translate-y-1/2"
+            onClick={() => setLightbox({ trade, view: view === "before" ? "after" : "before" })}
+            aria-label="Switch image"
+          >
+            <ChevronRight size={20} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* -------------------------------- header -------------------------------- */
@@ -961,7 +1066,7 @@ function CumulativeSection({ viewDate, enriched }) {
 
 /* -------------------------------- trade history -------------------------------- */
 
-function TradeHistorySection({ enriched, currency, filters, setFilters, onEdit, onDelete, onDuplicate, isReadOnly }) {
+function TradeHistorySection({ enriched, currency, filters, setFilters, onEdit, onDelete, onDuplicate, isReadOnly, onOpenImage }) {
   const rows = useMemo(() => {
     let list = [...enriched].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.created_at || 0) - (a.created_at || 0)));
     if (filters.result !== "ALL") list = list.filter((t) => t.result === filters.result);
@@ -1013,10 +1118,10 @@ function TradeHistorySection({ enriched, currency, filters, setFilters, onEdit, 
         <EmptyState text="No trades match. Log a trade from the calendar to get started." />
       ) : (
         <div className="overflow-x-auto rrj-scroll">
-          <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 720 }}>
+          <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 880 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                {["Date", "Instrument", "Dir", "Result", "Risk %", "Risk $", "RR", "P&L", "Strategy", ""].map((h) => (
+                {["Date", "Instrument", "Dir", "Result", "Risk %", "Risk $", "RR", "P&L", "Strategy", "Before", "After", ""].map((h) => (
                   <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 10.5, color: COLORS.textFaint, fontFamily: F.mono, letterSpacing: 0.5 }}>
                     {h.toUpperCase()}
                   </th>
@@ -1045,6 +1150,20 @@ function TradeHistorySection({ enriched, currency, filters, setFilters, onEdit, 
                     <td style={{ padding: "9px 10px", fontSize: 12.5, fontFamily: F.mono, color: t.actual_rr > 0 ? COLORS.green : t.actual_rr < 0 ? COLORS.red : COLORS.textDim }}>{fmtRR(t.actual_rr)}</td>
                     <td style={{ padding: "9px 10px", fontSize: 12.5, fontFamily: F.mono, color: t.pnl > 0 ? COLORS.green : t.pnl < 0 ? COLORS.red : COLORS.textDim }}>{fmtMoney(t.pnl, currency)}</td>
                     <td style={{ padding: "9px 10px", fontSize: 12.5, color: COLORS.textDim }}>{t.strategy || "—"}</td>
+                    <td style={{ padding: "9px 10px" }}>
+                      {t.screenshot_before ? (
+                        <button className="rrj-pill px-2.5 py-1 flex items-center gap-1" style={{ fontSize: 11 }} onClick={() => onOpenImage(t, "before")}>
+                          <ImageIcon size={11} /> Before
+                        </button>
+                      ) : <span style={{ color: COLORS.textFaint, fontSize: 12 }}>—</span>}
+                    </td>
+                    <td style={{ padding: "9px 10px" }}>
+                      {t.screenshot_after ? (
+                        <button className="rrj-pill px-2.5 py-1 flex items-center gap-1" style={{ fontSize: 11 }} onClick={() => onOpenImage(t, "after")}>
+                          <ImageIcon size={11} /> After
+                        </button>
+                      ) : <span style={{ color: COLORS.textFaint, fontSize: 12 }}>—</span>}
+                    </td>
                     <td style={{ padding: "9px 10px" }}>
                       {isReadOnly ? (
                         <button className="rrj-btn p-1.5" onClick={() => onEdit(t)} title="View day"><Pencil size={12} style={{ opacity: 0.5 }} /></button>
@@ -1141,11 +1260,10 @@ function emptyTradeForm(dateKeyStr, portfolio) {
   };
 }
 
-function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, onDelete, onDuplicate, isReadOnly }) {
+function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, onDelete, onDuplicate, isReadOnly, onOpenImage }) {
   const [form, setForm] = useState(() => emptyTradeForm(dk, portfolio));
   const [editingId, setEditingId] = useState(null);
   const [showMore, setShowMore] = useState(false);
-  const [lightbox, setLightbox] = useState(null);
   const [uploading, setUploading] = useState({ screenshot_before: false, screenshot_after: false });
   const [uploadError, setUploadError] = useState("");
   const fileRefBefore = useRef(null);
@@ -1208,7 +1326,7 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    compressImage(file, 1600, 0.88)
+    compressImage(file)
       .then((dataUrl) => setForm((f) => ({ ...f, [field]: dataUrl })))
       .catch(() => {
         // fallback: use original file if compression fails for any reason
@@ -1266,15 +1384,23 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                       {(t.screenshot_before || t.screenshot_after) && (
                         <div className="flex items-center gap-2 mt-2">
                           {t.screenshot_before && (
-                            <button onClick={() => setLightbox({ src: t.screenshot_before, label: "Before" })} className="flex flex-col items-start gap-1">
-                              <img src={t.screenshot_before} alt="before" style={{ height: 52, borderRadius: 6, border: `1px solid ${COLORS.border}`, objectFit: "cover" }} />
-                              <span style={{ fontSize: 9.5, color: COLORS.textFaint }}>Before</span>
+                            <button
+                              onClick={() => onOpenImage(t, "before")}
+                              className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
+                              style={{ fontSize: 12 }}
+                            >
+                              <img src={t.screenshot_before} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              Before
                             </button>
                           )}
                           {t.screenshot_after && (
-                            <button onClick={() => setLightbox({ src: t.screenshot_after, label: "After" })} className="flex flex-col items-start gap-1">
-                              <img src={t.screenshot_after} alt="after" style={{ height: 52, borderRadius: 6, border: `1px solid ${COLORS.border}`, objectFit: "cover" }} />
-                              <span style={{ fontSize: 9.5, color: COLORS.textFaint }}>After</span>
+                            <button
+                              onClick={() => onOpenImage(t, "after")}
+                              className="rrj-pill px-2.5 py-1.5 flex items-center gap-1.5"
+                              style={{ fontSize: 12 }}
+                            >
+                              <img src={t.screenshot_after} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+                              After
                             </button>
                           )}
                         </div>
@@ -1282,22 +1408,6 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          )}
-
-          {lightbox && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-6"
-              style={{ background: "rgba(4,6,10,0.9)" }}
-              onClick={() => setLightbox(null)}
-            >
-              <div className="flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between w-full">
-                  <span style={{ fontSize: 13, color: COLORS.textDim }}>{lightbox.label}</span>
-                  <button className="rrj-btn p-1.5" onClick={() => setLightbox(null)}><X size={16} /></button>
-                </div>
-                <img src={lightbox.src} alt={lightbox.label} style={{ maxHeight: "80vh", maxWidth: "100%", borderRadius: 10, border: `1px solid ${COLORS.border}` }} />
               </div>
             </div>
           )}
