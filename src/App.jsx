@@ -1339,13 +1339,16 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    compressImage(file)
-      .then((dataUrl) => setForm((f) => ({ ...f, [field]: dataUrl })))
-      .catch(() => {
-        // fallback: use original file if compression fails for any reason
-        const reader = new FileReader();
-        reader.onload = () => setForm((f) => ({ ...f, [field]: reader.result }));
-        reader.readAsDataURL(file);
+    setUploadError("");
+    setUploading((u) => ({ ...u, [field]: true }));
+    uploadScreenshot(file, field === "screenshot_before" ? "before" : "after")
+      .then((url) => {
+        setForm((f) => ({ ...f, [field]: url }));
+        setUploading((u) => ({ ...u, [field]: false }));
+      })
+      .catch((err) => {
+        setUploading((u) => ({ ...u, [field]: false }));
+        setUploadError("Couldn't upload that photo — " + (err && err.message ? err.message : "please try again") + ".");
       });
   }
 
@@ -1586,6 +1589,7 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                   onUploadClick={() => fileRefBefore.current && fileRefBefore.current.click()}
                   onLinkChange={(v) => setForm((f) => ({ ...f, screenshot_before: v }))}
                   onClear={() => setForm((f) => ({ ...f, screenshot_before: null }))}
+                  isUploading={uploading.screenshot_before}
                 />
                 <input ref={fileRefBefore} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_before")} className="hidden" />
                 <ScreenshotField
@@ -1594,8 +1598,12 @@ function TradeModal({ dateKey: dk, portfolio, trades, onClose, onAdd, onEdit, on
                   onUploadClick={() => fileRefAfter.current && fileRefAfter.current.click()}
                   onLinkChange={(v) => setForm((f) => ({ ...f, screenshot_after: v }))}
                   onClear={() => setForm((f) => ({ ...f, screenshot_after: null }))}
+                  isUploading={uploading.screenshot_after}
                 />
                 <input ref={fileRefAfter} type="file" accept="image/*" onChange={(e) => handleFile(e, "screenshot_after")} className="hidden" />
+                {uploadError && (
+                  <div className="col-span-2" style={{ fontSize: 12, color: COLORS.red }}>{uploadError}</div>
+                )}
               </div>
             </div>
           )}
@@ -1644,19 +1652,26 @@ function TextField({ label, value, onChange, placeholder }) {
   );
 }
 
-// A data: URL means an uploaded (compressed) image is stored directly.
-// Anything else is treated as an external link (e.g. a Google Photos share link).
+// True when the value is a real, directly-renderable image — either an
+// uploaded photo compressed to a data: URL (old trades, kept for
+// backward compatibility) or one hosted on Firebase Storage (current
+// uploads). Anything else (e.g. a pasted Google Photos link) is treated
+// as an external link instead, since we can't safely preview those.
 function isDataImage(v) {
-  return typeof v === "string" && v.startsWith("data:image");
+  return typeof v === "string" && (v.startsWith("data:image") || v.includes("firebasestorage.googleapis.com"));
 }
 
-function ScreenshotField({ label, value, onUploadClick, onLinkChange, onClear }) {
+function ScreenshotField({ label, value, onUploadClick, onLinkChange, onClear, isUploading }) {
   const isUploaded = isDataImage(value);
   const isLink = value && !isUploaded;
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
-      {isUploaded ? (
+      {isUploading ? (
+        <div className="rrj-btn px-3 py-2 flex items-center justify-center gap-2 w-full mb-2" style={{ fontSize: 12.5, color: COLORS.textDim }}>
+          Uploading…
+        </div>
+      ) : isUploaded ? (
         <div className="relative inline-block mb-2">
           <img src={value} alt={label} style={{ maxHeight: 110, borderRadius: 8, border: `1px solid ${COLORS.border}` }} />
           <button className="rrj-btn p-1 absolute top-1 right-1" onClick={onClear}><X size={12} /></button>
