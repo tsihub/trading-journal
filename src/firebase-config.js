@@ -11,3 +11,15 @@ export const firebaseConfig = {
   messagingSenderId: "313800034476",
   appId: "1:313800034476:web:27bc01d45ee2bdda79f709",
 };
+
+// This is your ONE permanent account name. It is never typed or
+// prompted for — it lives only here, in this file, on the live
+// website. Every device that opens the site automatically uses this
+// same account, so there is no way to end up on the wrong one.
+//
+// IMPORTANT — if you already have trades saved (from before this file
+// existed), set this to whichever Firestore document name currently
+// holds your real data, so you keep using the same account instead of
+// starting a new empty one. Check Firebase console → Firestore
+// Database → the "journals" collection → the document names there.
+export const MY_SYNC_CODE = "trades1914";
